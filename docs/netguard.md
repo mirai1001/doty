@@ -11,7 +11,7 @@
 
 ### How to Add a Host List from a URL
 1. Copy the URL of your text file containing blocked hosts.
-2. In the NetGuard panel, go to **Custom Host/url** > **Add Host List**.
+2. In the NetGuard panel, go to **Add Host List**.
 3. Paste the URL and save.
 4. The rules will reload automatically.
 
