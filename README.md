@@ -15,17 +15,14 @@
 | SSH      | WebSocket | 443      | 80           |
 
 ## Custom path or NO path info 
-
-| Protocol | Type | Port |
-| -------- | ---- | ---- |
-| VMESS    | TLS  | 8443 |
-| VMESS    | NTLS | 8080 |
-| VLESS    | TLS  | 7443 |
-| VLESS    | NTLS | 8880 |
-
-### Path example
-- / or `/<anypath>`
- 
+- Allow configuration of custom paths or no path only for the following ports:
+  
+| Protocol | Type | Port |     Custom Path    |
+| -------- | ---- | ---- | ------------------ |
+| VMESS    | TLS  | 8443 | / or `/<anytext>`  |
+| VMESS    | NTLS | 8080 | / or `/<anytext>`  |
+| VLESS    | TLS  | 7443 | / or `/<anytext>`  |
+| VLESS    | NTLS | 8880 | / or `/<anytext>`  | 
 
 ## Protocols & Multi-Path Support (WebSocket TLS & Non-TLS)
 
@@ -77,5 +74,9 @@
 ### 📅 [2025-09-06]  
 - Added automatic blocking of torrent sites (BitTorrent traffic, trackers, etc.)  
 - Added automatic blocking of adult (pornographic) sites  
-- Added ad-blocking functionality (ads, popups, tracking scripts)  
+- Added ad-blocking functionality (ads, popups, tracking scripts)
 
+### 📅 [2025-09-10]  
+- Add new ports for VMESS & VLESS.
+- Support custom paths or no path for a specific port.
+- Remove NetGuard, Use Default host blocker
