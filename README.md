@@ -14,6 +14,19 @@
 | SOCKS    | WebSocket | 443      | 80           |
 | SSH      | WebSocket | 443      | 80           |
 
+## Custom path or NO path info 
+
+| Protocol | Type | Port |
+| -------- | ---- | ---- |
+| VMESS    | TLS  | 8443 |
+| VMESS    | NTLS | 8080 |
+| VLESS    | TLS  | 7443 |
+| VLESS    | NTLS | 8880 |
+
+### Path example
+- / or `/<anypath>`
+ 
+
 ## Protocols & Multi-Path Support (WebSocket TLS & Non-TLS)
 
 | Protocol       | Example Path       | Multi-Path Support |
