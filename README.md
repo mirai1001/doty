@@ -19,10 +19,10 @@
   
 | Protocol | Type | Port |     Custom Path    |   Multi-Path Support   |
 | -------- | ---- | ---- | ------------------ | -----------------------|
-| VMESS    | TLS  | 8443 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
-| VMESS    | NTLS | 8080 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
-| VLESS    | TLS  | 7443 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
-| VLESS    | NTLS | 8880 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
+| VMESS    | TLS  | 2083 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
+| VMESS    | NTLS | 2082 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
+| VLESS    | TLS  | 2087 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
+| VLESS    | NTLS | 2086 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
 
 ## Protocols & Multi-Path Support (WebSocket TLS & Non-TLS)
 
