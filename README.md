@@ -17,22 +17,22 @@
 ## Custom path or NO path info 
 - Allow configuration of custom paths or no path only for the following ports:
   
-| Protocol | Type | Port |     Custom Path    |
-| -------- | ---- | ---- | ------------------ |
-| VMESS    | TLS  | 8443 | / or `/<anytext>`  |
-| VMESS    | NTLS | 8080 | / or `/<anytext>`  |
-| VLESS    | TLS  | 7443 | / or `/<anytext>`  |
-| VLESS    | NTLS | 8880 | / or `/<anytext>`  | 
+| Protocol | Type | Port |     Custom Path    |   Multi-Path Support   |
+| -------- | ---- | ---- | ------------------ | -----------------------|
+| VMESS    | TLS  | 8443 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
+| VMESS    | NTLS | 8080 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
+| VLESS    | TLS  | 7443 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
+| VLESS    | NTLS | 8880 | / or `/<anytext>`  |  ✅ Yes `/<any>/<any>`   |
 
 ## Protocols & Multi-Path Support (WebSocket TLS & Non-TLS)
 
-| Protocol       | Example Path       | Multi-Path Support |
-|----------------|--------------------|--------------------|
-| **VMess (WS)** |      `/vmess`      | ❌ No             |
-| **VLESS (WS)** |      `/vless`      | ❌ No             |
-| **Trojan (WS)**|      `/trws`       | ❌ No             |
-| **Socks (WS)** |      `/ssws`       | ❌ No             |
-| **SSH (WS)**   |      `/<anypath>`  | ✅ Yes            |
+| Protocol       | Example Path       |   Multi-Path Support    |
+|----------------|--------------------|-------------------------|
+| **VMess (WS)** |      `/vmess`      | ⚠️ Partial (some port) |
+| **VLESS (WS)** |      `/vless`      | ⚠️ Partial (some port) |
+| **Trojan (WS)**|      `/trws`       | ⚠️ Partial (some port) |
+| **Socks (WS)** |      `/ssws`       | ⚠️ Partial (some port) |
+| **SSH (WS)**   |      `/<anypath>`  | ✅ Yes                 |
 
 
 
