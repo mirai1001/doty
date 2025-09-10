@@ -80,3 +80,4 @@
 - Add new ports for VMESS & VLESS.
 - Support custom paths or no path for a specific port.
 - Remove NetGuard, Use Default host blocker
+- Remove Xray multi-path on ports 443 and 80
