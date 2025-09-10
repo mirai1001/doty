@@ -28,11 +28,11 @@
 
 | Protocol       | Example Path       | Multi-Path Support |
 |----------------|--------------------|--------------------|
-| **VMess (WS)** | `/<anypath>/vmess` | ✅ Yes            |
-| **VLESS (WS)** | `/<anypath>/vless` | ✅ Yes            |
-| **Trojan (WS)**| `/<anypath>/trws`  | ✅ Yes            |
-| **Socks (WS)** | `/<anypath>/ssws`  | ✅ Yes            |
-| **SSH (WS)**   | `/<anypath>`       | ✅ Yes            |
+| **VMess (WS)** |      `/vmess`      | ❌ No             |
+| **VLESS (WS)** |      `/vless`      | ❌ No             |
+| **Trojan (WS)**|      `/trws`       | ❌ No             |
+| **Socks (WS)** |      `/ssws`       | ❌ No             |
+| **SSH (WS)**   |      `/<anypath>`  | ✅ Yes            |
 
 
 
