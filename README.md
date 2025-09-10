@@ -26,13 +26,13 @@
 
 ## Protocols & Multi-Path Support (WebSocket TLS & Non-TLS)
 
-| Protocol       | Example Path       |   Multi-Path Support    |
-|----------------|--------------------|-------------------------|
-| **VMess (WS)** |      `/vmess`      | ⚠️ Partial (some port) |
-| **VLESS (WS)** |      `/vless`      | ⚠️ Partial (some port) |
-| **Trojan (WS)**|      `/trws`       | ⚠️ Partial (some port) |
-| **Socks (WS)** |      `/ssws`       | ⚠️ Partial (some port) |
-| **SSH (WS)**   |      `/<anypath>`  | ✅ Yes                 |
+| Protocol       | Example Path       | Port TLS/NTLS  |   Multi-Path Support    |
+|----------------|--------------------|----------------|-------------------------|
+| **VMess (WS)** |      `/vmess`      |   443/80       | ⚠️ Partial (some port) |
+| **VLESS (WS)** |      `/vless`      |   443/80       | ⚠️ Partial (some port) |
+| **Trojan (WS)**|      `/trws`       |   443/80       | ⚠️ Partial (some port) |
+| **Socks (WS)** |      `/ssws`       |   443/80       | ⚠️ Partial (some port) |
+| **SSH (WS)**   |      `/<anypath>`  |   443/80       | ✅ Yes                 |
 
 
 
