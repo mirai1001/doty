@@ -1,0 +1,19 @@
+SSH WS                 : 80
+SSH WSS                : 443
+
+VMESS TLS              : 80
+VMESS NTLS             : 443
+VMESS CUSTOM TLS       : 8443
+VMESS CUSTOM NTLS      : 8080
+
+VLESS TLS              : 80
+VLESS NTLS             : 443
+VLESS CUSTOM TLS       : 7443
+VLESS CUSTOM NTLS      : 8880
+
+TROJAN TLS             : 80
+TROJAN NTLS            : 443 
+
+SOCKS TLS              : 443
+SOCKS NTLS             : 80
+ 
