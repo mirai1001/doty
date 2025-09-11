@@ -2,17 +2,21 @@
 
 ## Default Ports
 
-| Service  | Transport |   TLS    |    NTLS      |
-|----------|-----------|----------|--------------|
-| VLESS    | gRPC      | 443      | -            |
-| VLESS    | WebSocket | 443      | 80           |
-| VMESS    | gRPC      | 443      | -            |
-| VMESS    | WebSocket | 443      | 80           |
-| Trojan   | gRPC      | 443      | -            |
-| Trojan   | WebSocket | 443      | 80           |
-| SOCKS    | gRPC      | 443      | -            |
-| SOCKS    | WebSocket | 443      | 80           |
-| SSH      | WebSocket | 443      | 80           |
+| Service  | Transport |   TLS       |   NTLS      |
+|----------|-----------|-------------|-------------|
+| VLESS    | gRPC      | 443         | -           |
+| VLESS    | WebSocket | 443         | 80          |
+| VMESS    | gRPC      | 443         | -           |
+| VMESS    | WebSocket | 443         | 80          |
+| Trojan   | gRPC      | 443         | -           |
+| Trojan   | WebSocket | 443         | 80          |
+| SOCKS    | gRPC      | 443         | -           |
+| SOCKS    | WebSocket | 443         | 80          |
+| SSH      | WebSocket | 443         | 80          |
+| SQUID    | -         | 3128, 8080  | -           |
+| OpenVPN  | TCP/UDP   | 1194        | 2200        |
+| OHP      | TCP       | -           | 8000        |
+
 
 ## Custom path or NO path info 
 - Allow configuration of custom paths or no path only for the following ports:
@@ -81,3 +85,8 @@
 - Support custom paths or no path for a specific port.
 - Remove NetGuard, Use Default host blocker
 - Remove Xray multi-path on ports 443 and 80
+
+### 📅 2025-09-11
+- Added OpenVPN support (TCP / UDP / SSL)
+- Added Squid Proxy (3128 / 8080)
+- Added OHP (Open HTTP Puncher) over TCP
