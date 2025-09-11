@@ -15,5 +15,5 @@ TROJAN TLS             : 80
 TROJAN NTLS            : 443 
 
 SOCKS TLS              : 443
-SOCKS NTLS             : 80
+SOCKS NTLS             : 80 
  
