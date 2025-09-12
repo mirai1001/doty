@@ -16,6 +16,7 @@
 | SQUID    | -         | 3128, 8080  | -           |
 | OpenVPN  | TCP/UDP   | 1194        | 2200        |
 | OHP      | TCP       | -           | 8000        |
+| ZIVPN    | UDP       | 5667        | 5667        |
 
 
 ## Custom path or NO path info 
@@ -90,3 +91,6 @@
 - Added OpenVPN support (TCP / UDP / SSL)
 - Added Squid Proxy (3128 / 8080)
 - Added OHP (Open HTTP Puncher) over TCP
+
+### 📅 2025-09-12
+ - Added zivpn panel
