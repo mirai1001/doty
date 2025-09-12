@@ -1,255 +1,169 @@
 #!/usr/bin/env python3
-# ws_bridge.py
-# Simple WebSocket-to-TCP bridge with proper handshake, masking, ping/pong, optional TLS (WSS).
-# Usage: python3 ws_bridge.py -b 127.0.0.1 -p 700 --target-host 127.0.0.1 --target-port 22 [--cert cert.pem --key key.pem]
+import socket, threading, selectors, sys, time, getopt
 
-import socket, threading, base64, hashlib, struct, argparse, ssl, time, select, sys, logging
-
-# Settings
-BUFLEN = 16384
-TIMEOUT = 60            # select timeout
-PING_INTERVAL = 30      # send ping to client if idle (seconds)
-MAX_FRAME = 16 * 1024 * 1024
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+LISTENING_ADDR = '0.0.0.0'
+LISTENING_PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7000
+PASS = ''
+BUFLEN = 4096 * 4
+TIMEOUT = 60
+DEFAULT_HOST = '127.0.0.1:109'
+RESPONSE = b'HTTP/1.1 101 WebSocket Dropbear\r\nContent-Length: 104857600000\r\n\r\n'
 
 
-def make_accept(key):
-    GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-    h = hashlib.sha1(key + GUID).digest()
-    return base64.b64encode(h).decode('ascii')
-
-
-def recv_http_headers(sock):
-    data = b''
-    while b'\r\n\r\n' not in data:
-        chunk = sock.recv(4096)
-        if not chunk:
-            return None
-        data += chunk
-        if len(data) > 64 * 1024:
-            return None
-    header, rest = data.split(b'\r\n\r\n', 1)
-    return header.decode('utf-8', errors='ignore'), rest
-
-
-def parse_headers(header_text):
-    lines = header_text.split('\r\n')
-    first = lines[0]
-    hdrs = {}
-    for line in lines[1:]:
-        if ':' in line:
-            k, v = line.split(':', 1)
-            hdrs[k.strip().lower()] = v.strip()
-    return first, hdrs
-
-
-def send_http_response(sock, status, headers=None, body=b''):
-    if headers is None:
-        headers = {}
-    hdr = f"HTTP/1.1 {status}\r\n"
-    for k, v in headers.items():
-        hdr += f"{k}: {v}\r\n"
-    hdr += "\r\n"
-    sock.sendall(hdr.encode('ascii') + body)
-
-
-def recv_ws_frame(sock, client_masking_expected=True):
-    # Minimal, robust frame reader (blocks until whole frame)
-    head = sock.recv(2)
-    if not head or len(head) < 2:
-        return None, None
-    b1, b2 = head[0], head[1]
-    fin = (b1 >> 7) & 1
-    opcode = b1 & 0x0f
-    mask = (b2 >> 7) & 1
-    length = b2 & 0x7f
-    if length == 126:
-        ext = sock.recv(2)
-        length = struct.unpack('!H', ext)[0]
-    elif length == 127:
-        ext = sock.recv(8)
-        length = struct.unpack('!Q', ext)[0]
-        if length > MAX_FRAME:
-            raise ValueError("Frame too big")
-    if mask:
-        mask_key = sock.recv(4)
-    else:
-        mask_key = None
-    payload = b''
-    toread = length
-    while toread:
-        chunk = sock.recv(min(BUFLEN, toread))
-        if not chunk:
-            return None, None
-        payload += chunk
-        toread -= len(chunk)
-    if mask_key:
-        payload = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
-    return opcode, payload
-
-
-def send_ws_frame(sock, payload=b'', opcode=2):  # opcode 2 = binary, 1 = text, 9 = ping, 10 = pong, 8 = close
-    fin_opcode = 0x80 | (opcode & 0x0f)
-    length = len(payload)
-    if length < 126:
-        header = struct.pack('!BB', fin_opcode, length)
-    elif length < (1 << 16):
-        header = struct.pack('!BBH', fin_opcode, 126, length)
-    else:
-        header = struct.pack('!BBQ', fin_opcode, 127, length)
-    sock.sendall(header + payload)
-
-
-class WSConnection(threading.Thread):
-    def __init__(self, client_sock, addr, target_host, target_port, certmode=False):
+class Server(threading.Thread):
+    def __init__(self, host, port):
         super().__init__(daemon=True)
-        self.client = client_sock
+        self.host = host
+        self.port = port
+        self.threads = []
+        self.threadsLock = threading.Lock()
+        self.logLock = threading.Lock()
+        self.running = False
+
+    def run(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((self.host, self.port))
+            s.listen(100)
+            s.settimeout(2)
+            self.running = True
+            print(f"Server listening on {self.host}:{self.port}")
+
+            while self.running:
+                try:
+                    client, addr = s.accept()
+                    client.setblocking(True)
+                    conn = ConnectionHandler(client, self, addr)
+                    conn.start()
+                    with self.threadsLock:
+                        self.threads.append(conn)
+                except socket.timeout:
+                    continue
+
+    def printLog(self, msg):
+        with self.logLock:
+            print(msg)
+
+    def removeConn(self, conn):
+        with self.threadsLock:
+            if conn in self.threads:
+                self.threads.remove(conn)
+
+    def close(self):
+        self.running = False
+        with self.threadsLock:
+            for c in self.threads:
+                c.close()
+
+
+class ConnectionHandler(threading.Thread):
+    def __init__(self, client, server, addr):
+        super().__init__(daemon=True)
+        self.client = client
+        self.server = server
         self.addr = addr
-        self.target_host = target_host
-        self.target_port = target_port
-        self.target = None
-        self.last_activity = time.time()
-        self.certmode = certmode
-        self.running = True
+        self.clientClosed = False
+        self.targetClosed = True
+        self.log = f"Connection: {addr}"
+        self.client_buffer = b''
+
+    def close(self):
+        for sock, closed_attr in [(self.client, 'clientClosed'), (getattr(self, 'target', None), 'targetClosed')]:
+            if sock and not getattr(self, closed_attr):
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                    sock.close()
+                except:
+                    pass
+                setattr(self, closed_attr, True)
 
     def run(self):
         try:
-            ok = self.handshake()
-            if not ok:
-                logging.info(f"{self.addr} handshake failed")
-                self.close_all()
-                return
+            self.client_buffer = self.client.recv(BUFLEN)
+            hostPort = self.get_header(b'X-Real-Host') or DEFAULT_HOST.encode()
+            passwd = self.get_header(b'X-Pass')
 
-            # connect to target
-            self.target = socket.create_connection((self.target_host, self.target_port))
-            logging.info(f"{self.addr} connected -> {self.target_host}:{self.target_port}")
-
-            # loop: read ws frames from client and forward to target; read from target and send ws frames back
-            while self.running:
-                r, _, _ = select.select([self.client, self.target], [], [], TIMEOUT)
-                if not r:
-                    # keepalive ping if idle
-                    if time.time() - self.last_activity > PING_INTERVAL:
-                        try:
-                            send_ws_frame(self.client, b'', opcode=9)
-                        except Exception:
-                            break
-                    continue
-
-                if self.client in r:
-                    opcode, payload = recv_ws_frame(self.client)
-                    if opcode is None:
-                        break
-                    self.last_activity = time.time()
-                    if opcode == 8:  # close
-                        # reply close and exit
-                        try:
-                            send_ws_frame(self.client, b'', opcode=8)
-                        except Exception:
-                            pass
-                        break
-                    elif opcode == 9:  # ping
-                        send_ws_frame(self.client, payload or b'', opcode=10)
-                        continue
-                    elif opcode in (1, 2, 0):  # text, binary, continuation
-                        # forward payload to target raw
-                        try:
-                            self.target.sendall(payload)
-                        except Exception:
-                            break
-                    else:
-                        # ignore unknown opcodes
-                        continue
-
-                if self.target in r:
-                    data = self.target.recv(BUFLEN)
-                    if not data:
-                        break
-                    self.last_activity = time.time()
-                    # send as binary frame to client
-                    try:
-                        send_ws_frame(self.client, data, opcode=2)
-                    except Exception:
-                        break
+            if PASS and passwd.decode() != PASS:
+                self.client.send(b'HTTP/1.1 400 WrongPass!\r\n\r\n')
+            elif hostPort.startswith(b'127.0.0.1') or hostPort.startswith(b'localhost') or not PASS:
+                self.handle_connect(hostPort.decode())
+            else:
+                self.client.send(b'HTTP/1.1 403 Forbidden!\r\n\r\n')
         except Exception as e:
-            logging.exception(f"{self.addr} error: {e}")
+            self.server.printLog(f"{self.log} - error: {e}")
         finally:
-            self.close_all()
-            logging.info(f"{self.addr} closed")
+            self.close()
+            self.server.removeConn(self)
 
-    def handshake(self):
-        # read HTTP headers
-        res = recv_http_headers(self.client)
-        if not res:
-            return False
-        header_text, rest = res
-        first, headers = parse_headers(header_text)
-        # Validate Upgrade
-        if headers.get('upgrade', '').lower() != 'websocket' or 'sec-websocket-key' not in headers:
-            send_http_response(self.client, "400 Bad Request", {"Connection": "close"}, b'Invalid websocket handshake')
-            return False
-        key = headers['sec-websocket-key'].encode('ascii')
-        accept = make_accept(base64.b64decode(base64.b64encode(key)))  # key is already base64 -> keep safe
-        # reply
-        resp_headers = {
-            "Upgrade": "websocket",
-            "Connection": "Upgrade",
-            "Sec-WebSocket-Accept": make_accept(key),
-            "Server": "ws-bridge",
-        }
-        send_http_response(self.client, "101 Switching Protocols", resp_headers)
-        return True
+    def get_header(self, header):
+        idx = self.client_buffer.find(header + b': ')
+        if idx == -1: return b''
+        start = idx + len(header) + 2
+        end = self.client_buffer.find(b'\r\n', start)
+        return self.client_buffer[start:end] if end != -1 else b''
 
-    def close_all(self):
-        self.running = False
-        for sock in (getattr(self, 'client', None), getattr(self, 'target', None)):
-            try:
-                if sock:
-                    sock.shutdown(socket.SHUT_RDWR)
-            except Exception:
-                pass
-            try:
-                if sock:
-                    sock.close()
-            except Exception:
-                pass
+    def connect_target(self, host):
+        if ':' in host:
+            host, port = host.split(':')
+            port = int(port)
+        else:
+            port = 443
+        self.target = socket.create_connection((host, port))
+        self.targetClosed = False
 
+    def handle_connect(self, hostPort):
+        self.log += f" - CONNECT {hostPort}"
+        self.connect_target(hostPort)
+        self.client.sendall(RESPONSE)
+        self.server.printLog(self.log)
+        self.forward_loop()
 
-def serve(bind_addr, bind_port, target_host, target_port, certfile=None, keyfile=None):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
-        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        srv.bind((bind_addr, bind_port))
-        srv.listen(512)
-        logging.info(f"Listening {bind_addr}:{bind_port} -> target {target_host}:{target_port} (WSS={'yes' if certfile else 'no'})")
-        while True:
-            client_sock, addr = srv.accept()
-            logging.info(f"Accept {addr}")
-            # Optionally wrap TLS (accept WSS)
-            if certfile and keyfile:
+    def forward_loop(self):
+        sel = selectors.DefaultSelector()
+        sel.register(self.client, selectors.EVENT_READ, self.target)
+        sel.register(self.target, selectors.EVENT_READ, self.client)
+        count = 0
+        while count < TIMEOUT:
+            events = sel.select(timeout=3)
+            if not events:
+                count += 1
+                continue
+            for key, _ in events:
                 try:
-                    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-                    context.load_cert_chain(certfile=certfile, keyfile=keyfile)
-                    client_sock = context.wrap_socket(client_sock, server_side=True)
-                except Exception:
-                    logging.exception("TLS wrap failed")
-                    client_sock.close()
-                    continue
-            handler = WSConnection(client_sock, addr, target_host, target_port, certmode=bool(certfile))
-            handler.start()
+                    data = key.fileobj.recv(BUFLEN)
+                    if not data:
+                        return
+                    key.data.sendall(data)
+                    count = 0
+                except:
+                    return
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='WebSocket to TCP bridge')
-    parser.add_argument('-b', '--bind', default='127.0.0.1', help='bind address')
-    parser.add_argument('-p', '--port', type=int, default=700, help='listen port')
-    parser.add_argument('--target-host', default='127.0.0.1', help='target host to forward (e.g. sshd)')
-    parser.add_argument('--target-port', type=int, default=22, help='target port')
-    parser.add_argument('--cert', help='TLS certificate (PEM) to enable WSS')
-    parser.add_argument('--key', help='TLS key (PEM)')
-    args = parser.parse_args()
+def parse_args(argv):
+    global LISTENING_ADDR, LISTENING_PORT
     try:
-        serve(args.bind, args.port, args.target_host, args.target_port, certfile=args.cert, keyfile=args.key)
+        opts, args = getopt.getopt(argv, "hb:p:", ["bind=", "port="])
+    except getopt.GetoptError:
+        usage(); sys.exit(2)
+    for opt, arg in opts:
+        if opt == '-h': usage(); sys.exit()
+        elif opt in ("-b", "--bind"): LISTENING_ADDR = arg
+        elif opt in ("-p", "--port"): LISTENING_PORT = int(arg)
+
+def usage():
+    print("Usage: proxy.py -p <port>")
+    print("       proxy.py -b <bindAddr> -p <port>")
+
+def main():
+    print(f"\n:-------PythonProxy-------:\nListening addr: {LISTENING_ADDR}\nListening port: {LISTENING_PORT}\n")
+    server = Server(LISTENING_ADDR, LISTENING_PORT)
+    server.start()
+    try:
+        while True: time.sleep(2)
     except KeyboardInterrupt:
-        logging.info("Exiting")
-        sys.exit(0)
+        print("Stopping...")
+        server.close()
+
+if __name__ == "__main__":
+    parse_args(sys.argv[1:])
+    main()
