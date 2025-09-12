@@ -17,6 +17,7 @@
 | OpenVPN  | TCP/UDP   | 1194        | 2200        |
 | OHP      | TCP       | -           | 8000        |
 | ZIVPN    | UDP       | 5667        | 5667        |
+| SLDNS    | -         | ALL PORT    | ALL PORT    |
 
 
 ## Custom path or NO path info 
@@ -93,4 +94,5 @@
 - Added OHP (Open HTTP Puncher) over TCP
 
 ### 📅 2025-09-12
- - Added zivpn panel
+- Added support for ZIVPN panel
+- Added support for SlowDNS
