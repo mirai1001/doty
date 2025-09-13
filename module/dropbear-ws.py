@@ -1,76 +1,61 @@
 #!/usr/bin/env python3
-import socket, threading, selectors, sys, time, getopt, ssl, base64, hashlib
+import socket, threading, selectors, sys, time, getopt
 
-# Default config
-LISTENING_ADDR = "0.0.0.0"
-LISTENING_PORT = 7000
-DEFAULT_HOST = "127.0.0.1:109"   # Dropbear or other backend
+LISTENING_ADDR = '0.0.0.0'
+LISTENING_PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 7000
+PASS = ''
 BUFLEN = 4096 * 4
-TIMEOUT = 300
-PASS = ""   # optional password
-USE_TLS = False
-CERT_FILE = "/etc/ssl/certs/server.crt"
-KEY_FILE  = "/etc/ssl/private/server.key"
+TIMEOUT = 60
+DEFAULT_HOST = '127.0.0.1:109'
+RESPONSE = b'HTTP/1.1 101 WebSocket Dropbear\r\nContent-Length: 104857600000\r\n\r\n'
 
-# ---------------- WebSocket Handshake ----------------
-GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
-def make_handshake(key: str) -> bytes:
-    accept = base64.b64encode(hashlib.sha1((key + GUID).encode()).digest()).decode()
-    response = (
-        "HTTP/1.1 101 Switching Protocols\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        f"Sec-WebSocket-Accept: {accept}\r\n"
-        "Server: nginx\r\n"
-        "Keep-Alive: timeout=60\r\n"
-        "\r\n"
-    )
-    return response.encode()
-
-# ---------------- Server Class ----------------
 class Server(threading.Thread):
     def __init__(self, host, port):
         super().__init__(daemon=True)
         self.host = host
         self.port = port
         self.threads = []
+        self.threadsLock = threading.Lock()
+        self.logLock = threading.Lock()
         self.running = False
-        self.sel = selectors.DefaultSelector()
 
     def run(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((self.host, self.port))
+            s.listen(100)
+            s.settimeout(2)
+            self.running = True
+            print(f"Server listening on {self.host}:{self.port}")
 
-        if USE_TLS:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.load_cert_chain(certfile=CERT_FILE, keyfile=KEY_FILE)
-            sock = context.wrap_socket(sock, server_side=True)
+            while self.running:
+                try:
+                    client, addr = s.accept()
+                    client.setblocking(True)
+                    conn = ConnectionHandler(client, self, addr)
+                    conn.start()
+                    with self.threadsLock:
+                        self.threads.append(conn)
+                except socket.timeout:
+                    continue
 
-        sock.bind((self.host, self.port))
-        sock.listen(100)
-        sock.settimeout(2)
-        self.running = True
-        print(f"[+] Listening on {self.host}:{self.port} (TLS={USE_TLS})")
+    def printLog(self, msg):
+        with self.logLock:
+            print(msg)
 
-        while self.running:
-            try:
-                client, addr = sock.accept()
-                client.setblocking(True)
-                conn = ConnectionHandler(client, self, addr)
-                conn.start()
-                self.threads.append(conn)
-            except socket.timeout:
-                continue
-            except Exception as e:
-                print(f"[!] Accept error: {e}")
+    def removeConn(self, conn):
+        with self.threadsLock:
+            if conn in self.threads:
+                self.threads.remove(conn)
 
-    def stop(self):
+    def close(self):
         self.running = False
-        for c in self.threads:
-            c.close()
+        with self.threadsLock:
+            for c in self.threads:
+                c.close()
 
-# ---------------- Connection Handler ----------------
+
 class ConnectionHandler(threading.Thread):
     def __init__(self, client, server, addr):
         super().__init__(daemon=True)
@@ -79,72 +64,69 @@ class ConnectionHandler(threading.Thread):
         self.addr = addr
         self.clientClosed = False
         self.targetClosed = True
+        self.log = f"Connection: {addr}"
+        self.client_buffer = b''
 
     def close(self):
-        for s in [self.client, getattr(self, "target", None)]:
-            if s:
-                try: s.close()
-                except: pass
-
-    def get_header(self, data: bytes, header: str) -> str:
-        marker = (header + ": ").encode()
-        idx = data.find(marker)
-        if idx == -1:
-            return ""
-        start = idx + len(marker)
-        end = data.find(b"\r\n", start)
-        return data[start:end].decode() if end != -1 else ""
+        for sock, closed_attr in [(self.client, 'clientClosed'), (getattr(self, 'target', None), 'targetClosed')]:
+            if sock and not getattr(self, closed_attr):
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                    sock.close()
+                except:
+                    pass
+                setattr(self, closed_attr, True)
 
     def run(self):
         try:
-            data = self.client.recv(BUFLEN)
+            self.client_buffer = self.client.recv(BUFLEN)
+            hostPort = self.get_header(b'X-Real-Host') or DEFAULT_HOST.encode()
+            passwd = self.get_header(b'X-Pass')
 
-            # Basic header validation
-            if b"Upgrade: websocket" not in data:
-                self.client.send(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-                return
-
-            ws_key = self.get_header(data, "Sec-WebSocket-Key")
-            passwd = self.get_header(data, "X-Pass")
-            hostPort = self.get_header(data, "X-Real-Host") or DEFAULT_HOST
-
-            # Password check
-            if PASS and passwd != PASS:
-                self.client.send(b"HTTP/1.1 403 Forbidden\r\n\r\n")
-                return
-
-            # Connect to backend
-            self.target = self.connect_target(hostPort)
-            self.client.sendall(make_handshake(ws_key))
-            print(f"[+] WS CONNECT {self.addr} -> {hostPort}")
-
-            self.forward_loop()
-
+            if PASS and passwd.decode() != PASS:
+                self.client.send(b'HTTP/1.1 400 WrongPass!\r\n\r\n')
+            elif hostPort.startswith(b'127.0.0.1') or hostPort.startswith(b'localhost') or not PASS:
+                self.handle_connect(hostPort.decode())
+            else:
+                self.client.send(b'HTTP/1.1 403 Forbidden!\r\n\r\n')
         except Exception as e:
-            print(f"[!] Error: {e}")
+            self.server.printLog(f"{self.log} - error: {e}")
         finally:
             self.close()
+            self.server.removeConn(self)
 
-    def connect_target(self, hostPort: str):
-        if ":" in hostPort:
-            host, port = hostPort.split(":")
+    def get_header(self, header):
+        idx = self.client_buffer.find(header + b': ')
+        if idx == -1: return b''
+        start = idx + len(header) + 2
+        end = self.client_buffer.find(b'\r\n', start)
+        return self.client_buffer[start:end] if end != -1 else b''
+
+    def connect_target(self, host):
+        if ':' in host:
+            host, port = host.split(':')
             port = int(port)
         else:
-            host, port = hostPort, 443
-        sock = socket.create_connection((host, port))
+            port = 443
+        self.target = socket.create_connection((host, port))
         self.targetClosed = False
-        return sock
+
+    def handle_connect(self, hostPort):
+        self.log += f" - CONNECT {hostPort}"
+        self.connect_target(hostPort)
+        self.client.sendall(RESPONSE)
+        self.server.printLog(self.log)
+        self.forward_loop()
 
     def forward_loop(self):
         sel = selectors.DefaultSelector()
         sel.register(self.client, selectors.EVENT_READ, self.target)
         sel.register(self.target, selectors.EVENT_READ, self.client)
-
-        idle = 0
-        while idle < TIMEOUT:
+        count = 0
+        while count < TIMEOUT:
             events = sel.select(timeout=3)
             if not events:
-                idle += 1
+                count += 1
                 continue
             for key, _ in events:
                 try:
@@ -152,34 +134,36 @@ class ConnectionHandler(threading.Thread):
                     if not data:
                         return
                     key.data.sendall(data)
-                    idle = 0
+                    count = 0
                 except:
                     return
 
-# ---------------- CLI ----------------
-def usage():
-    print("Usage: ws-dropbear.py -p <port> [-b <bindAddr>] [--tls]")
 
 def parse_args(argv):
-    global LISTENING_ADDR, LISTENING_PORT, USE_TLS
+    global LISTENING_ADDR, LISTENING_PORT
     try:
-        opts, args = getopt.getopt(argv, "hb:p:", ["bind=", "port=", "tls"])
+        opts, args = getopt.getopt(argv, "hb:p:", ["bind=", "port="])
     except getopt.GetoptError:
         usage(); sys.exit(2)
     for opt, arg in opts:
-        if opt in ("-b", "--bind"): LISTENING_ADDR = arg
+        if opt == '-h': usage(); sys.exit()
+        elif opt in ("-b", "--bind"): LISTENING_ADDR = arg
         elif opt in ("-p", "--port"): LISTENING_PORT = int(arg)
-        elif opt == "--tls": USE_TLS = True
+
+def usage():
+    print("Usage: proxy.py -p <port>")
+    print("       proxy.py -b <bindAddr> -p <port>")
 
 def main():
-    parse_args(sys.argv[1:])
-    srv = Server(LISTENING_ADDR, LISTENING_PORT)
-    srv.start()
+    print(f"\n:-------PythonProxy-------:\nListening addr: {LISTENING_ADDR}\nListening port: {LISTENING_PORT}\n")
+    server = Server(LISTENING_ADDR, LISTENING_PORT)
+    server.start()
     try:
         while True: time.sleep(2)
     except KeyboardInterrupt:
         print("Stopping...")
-        srv.stop()
+        server.close()
 
 if __name__ == "__main__":
+    parse_args(sys.argv[1:])
     main()
