@@ -104,4 +104,5 @@
 - Fixed bug in SSH WebSocket
 - Fixed bug in SlowDNS
 - Added support for UDP Custom
+- Added auto delete expiry account
 
