@@ -96,3 +96,9 @@
 ### 📅 2025-09-12
 - Added support for ZIVPN panel
 - Added support for SlowDNS
+
+### 📅 2025-09-13
+- Fixed bug in SSH WebSocket
+- Fixed bug in SlowDNS
+- Added support for UDP Custom
+
