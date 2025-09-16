@@ -106,3 +106,5 @@
 - Added support for UDP Custom
 - Added auto delete expiry account
 
+### 📅 2025-09-16
+- Updated from stunnel4 to stunnel5
